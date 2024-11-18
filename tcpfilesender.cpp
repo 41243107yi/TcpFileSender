@@ -12,6 +12,10 @@ TcpFileSender::TcpFileSender(QWidget *parent)
     startButton = new QPushButton(QStringLiteral("開始"));
     quitButton = new QPushButton(QStringLiteral("退出"));
     openButton = new QPushButton(QStringLiteral("開檔"));
+    ipLineEdit = new QLineEdit;
+    portLineEdit = new QLineEdit;
+    ipLineEdit->setPlaceholderText(QStringLiteral("輸入IP地址"));
+    portLineEdit->setPlaceholderText(QStringLiteral("輸入Port"));
     startButton->setEnabled(false);
     buttonBox = new QDialogButtonBox;
     buttonBox->addButton(startButton, QDialogButtonBox::ActionRole);
@@ -21,65 +25,73 @@ TcpFileSender::TcpFileSender(QWidget *parent)
     QVBoxLayout *mainLayout = new QVBoxLayout;
     mainLayout->addWidget(clientProgressBar);
     mainLayout->addWidget(clientStatusLabel);
+    mainLayout->addWidget(ipLineEdit);
+    mainLayout->addWidget(portLineEdit);
     mainLayout->addStretch(1);
     mainLayout->addSpacing(10);
     mainLayout->addWidget(buttonBox);
     setLayout(mainLayout);
     setWindowTitle(QStringLiteral("檔案傳送"));
-    connect(openButton,SIGNAL(clicked()), this, SLOT(openFile()));
+    connect(openButton, SIGNAL(clicked()), this, SLOT(openFile()));
     connect(startButton, SIGNAL(clicked()), this, SLOT(start()));
     connect(&tcpClient, SIGNAL(connected()), this, SLOT(startTransfer()));
     connect(&tcpClient, SIGNAL(bytesWritten(qint64)), this, SLOT(updateClientProgress(qint64)));
     connect(quitButton, SIGNAL(clicked()), this, SLOT(close()));
-
 }
+
 void TcpFileSender::openFile()
 {
     fileName = QFileDialog::getOpenFileName(this);
     if (!fileName.isEmpty()) startButton->setEnabled(true);
 }
+
 void TcpFileSender::start()
 {
     startButton->setEnabled(false);
     bytesWritten = 0;
     clientStatusLabel->setText(QStringLiteral("連接中..."));
-    tcpClient.connectToHost(QHostAddress("127.0.0.1"), 16998);
+    QString ipAddress = ipLineEdit->text();
+    quint16 port = portLineEdit->text().toUShort();
+    tcpClient.connectToHost(QHostAddress(ipAddress), port);
 }
+
 void TcpFileSender::startTransfer()
 {
     localFile = new QFile(fileName);
     if (!localFile->open(QFile::ReadOnly))
-     {
-        QMessageBox::warning(this,QStringLiteral("應用程式"),
-                              QStringLiteral("無法讀取 %1:\n%2.").arg(fileName)
-                              .arg(localFile->errorString()));
+    {
+        QMessageBox::warning(this, QStringLiteral("應用程式"),
+                             QStringLiteral("無法讀取 %1:\n%2.").arg(fileName)
+                                 .arg(localFile->errorString()));
         return;
-     }
+    }
 
     totalBytes = localFile->size();
     QDataStream sendOut(&outBlock, QIODevice::WriteOnly);
     sendOut.setVersion(QDataStream::Qt_4_6);
     QString currentFile = fileName.right(fileName.size() -
-                                         fileName.lastIndexOf("/")-1);
-    sendOut <<qint64(0)<<qint64(0)<<currentFile;
+                                         fileName.lastIndexOf("/") - 1);
+    sendOut << qint64(0) << qint64(0) << currentFile;
     totalBytes += outBlock.size();
 
     sendOut.device()->seek(0);
-    sendOut<<totalBytes<<qint64((outBlock.size()-sizeof(qint64)*2));
+    sendOut << totalBytes << qint64((outBlock.size() - sizeof(qint64) * 2));
     bytesToWrite = totalBytes - tcpClient.write(outBlock);
     clientStatusLabel->setText(QStringLiteral("已連接"));
-    qDebug() << currentFile <<totalBytes;
+    qDebug() << currentFile << totalBytes;
     outBlock.resize(0);
 }
+
 void TcpFileSender::updateClientProgress(qint64 numBytes)
 {
-    bytesWritten += (int) numBytes;
-    if(bytesToWrite > 0)
+    bytesWritten += (int)numBytes;
+    if (bytesToWrite > 0)
     {
         outBlock = localFile->read(qMin(bytesToWrite, loadSize));
-        bytesToWrite -= (int) tcpClient.write(outBlock);
+        bytesToWrite -= (int)tcpClient.write(outBlock);
         outBlock.resize(0);
-    }else
+    }
+    else
     {
         localFile->close();
     }
@@ -91,8 +103,4 @@ void TcpFileSender::updateClientProgress(qint64 numBytes)
 
 TcpFileSender::~TcpFileSender()
 {
-
 }
-
-
-
